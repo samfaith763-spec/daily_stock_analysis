@@ -10,27 +10,50 @@ from typing import Optional, Dict
 
 class AutomatedTradingBot:
     def __init__(self):
+        # Debug: Print what environment variables exist
+        print("=" * 50)
+        print("DEBUG: Checking environment variables...")
+        print(f"ALPACA_API_KEY exists: {'Yes' if os.getenv('ALPACA_API_KEY') else 'No'}")
+        print(f"ALPACA_SECRET exists: {'Yes' if os.getenv('ALPACA_SECRET') else 'No'}")
+        print(f"GEMINI_API_KEY exists: {'Yes' if os.getenv('GEMINI_API_KEY') else 'No'}")
+        print(f"NTFY_URL exists: {'Yes' if os.getenv('NTFY_URL') else 'No'}")
+        print(f"STOCK_LIST exists: {'Yes' if os.getenv('STOCK_LIST') else 'No'}")
+        print("=" * 50)
+        
         # Get environment variables
-        self.alpaca_api_key = os.getenv('ALPACA_API_KEY')
-        self.alpaca_secret = os.getenv('ALPACA_SECRET')
-        self.ntfy_url = os.getenv('NTFY_URL')
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
+        self.alpaca_api_key = os.getenv('ALPACA_API_KEY', '')
+        self.alpaca_secret = os.getenv('ALPACA_SECRET', '')
+        self.ntfy_url = os.getenv('NTFY_URL', '')
+        self.gemini_api_key = os.getenv('GEMINI_API_KEY', '')
         self.stock_list = os.getenv('STOCK_LIST', '').split(',')
         
         # Validate credentials
-        if not self.alpaca_api_key or not self.alpaca_secret:
-            raise ValueError("Alpaca API credentials not found! Check your GitHub secrets.")
-        
+        errors = []
+        if not self.alpaca_api_key:
+            errors.append("ALPACA_API_KEY is missing")
+        if not self.alpaca_secret:
+            errors.append("ALPACA_SECRET is missing")
         if not self.gemini_api_key:
-            raise ValueError("Gemini API key not found! Check your GitHub secrets.")
-        
+            errors.append("GEMINI_API_KEY is missing")
         if not self.ntfy_url:
-            raise ValueError("NTFY_URL not found! Check your GitHub secrets.")
+            errors.append("NTFY_URL is missing")
+        if not self.stock_list or self.stock_list == ['']:
+            errors.append("STOCK_LIST is missing or empty")
+        
+        if errors:
+            error_msg = "Missing environment variables:\n" + "\n".join([f"  - {e}" for e in errors])
+            raise ValueError(error_msg)
+        
+        print("✅ All credentials loaded successfully!")
         
         # Initialize clients
-        self.trading_client = TradingClient(self.alpaca_api_key, self.alpaca_secret, paper=True)
-        self.data_client = StockHistoricalDataClient(self.alpaca_api_key, self.alpaca_secret)
-        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+        try:
+            self.trading_client = TradingClient(self.alpaca_api_key, self.alpaca_secret, paper=True)
+            self.data_client = StockHistoricalDataClient(self.alpaca_api_key, self.alpaca_secret)
+            self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+            print("✅ All clients initialized successfully!")
+        except Exception as e:
+            raise ValueError(f"Failed to initialize clients: {str(e)}")
         
     def send_ntfy_notification(self, title: str, message: str, priority: int = 3):
         """Send notification via ntfy"""
@@ -50,7 +73,7 @@ class AutomatedTradingBot:
             else:
                 print(f"❌ Failed to send notification: {response.status_code}")
         except Exception as e:
-            print(f" Error sending notification: {str(e)}")
+            print(f"❌ Error sending notification: {str(e)}")
     
     def get_stock_analysis(self, symbol: str) -> Dict:
         """Use Gemini API to analyze stock"""
@@ -77,7 +100,7 @@ class AutomatedTradingBot:
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
         except Exception as e:
-            print(f"❌ Analysis error for {symbol}: {str(e)}")
+            print(f" Analysis error for {symbol}: {str(e)}")
             return {"analysis": f"Analysis failed: {str(e)}", "timestamp": datetime.now()}
     
     def execute_trade(self, symbol: str, side: str, quantity: int):
@@ -210,7 +233,7 @@ Error: {str(e)}
                 except Exception as e:
                     print(f"Error checking positions: {e}")
             else:
-                print(f"️ Holding {symbol} - No action taken")
+                print(f"⏸️ Holding {symbol} - No action taken")
         
         self.send_ntfy_notification(
             "✅ Trading Cycle Complete",
@@ -224,6 +247,16 @@ if __name__ == "__main__":
         bot = AutomatedTradingBot()
         bot.run_analysis_and_trade()
     except ValueError as e:
-        print(f"❌ CRITICAL ERROR: {str(e)}")
-        print("Please check your GitHub repository secrets!")
+        print(f"\n❌ CRITICAL ERROR: {str(e)}")
+        print("\n Please verify your GitHub secrets:")
+        print("   1. Go to Settings → Secrets and variables → Actions")
+        print("   2. Make sure these secrets exist EXACTLY:")
+        print("      - ALPACA_API_KEY")
+        print("      - ALPACA_SECRET")
+        print("      - GEMINI_API_KEY")
+        print("      - NTFY_URL")
+        print("      - STOCK_LIST")
+        exit(1)
+    except Exception as e:
+        print(f"\n❌ UNEXPECTED ERROR: {str(e)}")
         exit(1)
