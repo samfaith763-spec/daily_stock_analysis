@@ -2,10 +2,12 @@ name: Automated Trading Bot
 
 on:
   schedule:
-    # Run at market open (9:30 AM ET) on trading days
-    - cron: '30 13 * * 1-5'  # Monday-Friday at 1:30 PM UTC (9:30 AM ET)
-    # Run at midday check
-    - cron: '0 17 * * 1-5'   # Monday-Friday at 5:00 PM UTC (1:00 PM ET)
+    # Morning: Market Open (9:30 AM ET / 2:30 PM UTC)
+    - cron: '30 14 * * 1-5'
+    # Lunch: Midday Check (12:00 PM ET / 5:00 PM UTC)
+    - cron: '0 17 * * 1-5'
+    # Evening: Before Market Close (4:00 PM ET / 9:00 PM UTC)
+    - cron: '0 21 * * 1-5'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
