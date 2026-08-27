@@ -28,6 +28,39 @@ jobs:
         python -m pip install --upgrade pip
         pip install alpaca-py google-genai requests
     
+    - name: Debug - Show environment variables (masked)
+      run: |
+        echo "Checking if secrets are loaded..."
+        if [ -z "${{ secrets.ALPACA_API_KEY }}" ]; then
+          echo "❌ ALPACA_API_KEY is empty or not set"
+        else
+          echo "✅ ALPACA_API_KEY is set (length: ${#ALPACA_API_KEY})"
+        fi
+        
+        if [ -z "${{ secrets.ALPACA_SECRET }}" ]; then
+          echo " ALPACA_SECRET is empty or not set"
+        else
+          echo "✅ ALPACA_SECRET is set (length: ${#ALPACA_SECRET})"
+        fi
+        
+        if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+          echo "❌ GEMINI_API_KEY is empty or not set"
+        else
+          echo "✅ GEMINI_API_KEY is set"
+        fi
+        
+        if [ -z "${{ secrets.NTFY_URL }}" ]; then
+          echo "❌ NTFY_URL is empty or not set"
+        else
+          echo "✅ NTFY_URL is set"
+        fi
+        
+        if [ -z "${{ secrets.STOCK_LIST }}" ]; then
+          echo "❌ STOCK_LIST is empty or not set"
+        else
+          echo "✅ STOCK_LIST is set: ${{ secrets.STOCK_LIST }}"
+        fi
+    
     - name: Run Trading Bot
       env:
         ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
@@ -42,7 +75,7 @@ jobs:
       env:
         NTFY_URL: ${{ secrets.NTFY_URL }}
       run: |
-        curl -d "Trading bot execution failed" \
+        curl -d "Trading bot execution failed - check GitHub Actions logs" \
           -H "Title: ❌ Trading Bot Failed" \
           -H "Priority: 5" \
           -H "Tags: error" \
