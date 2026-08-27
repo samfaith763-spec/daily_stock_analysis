@@ -54,6 +54,7 @@ imgkit>=1.2.0              # Markdown to image; requires wkhtmltopdf
 fake-useragent>=1.4.0       # Random User-Agent support
 httpx[socks]                # HTTP client with SOCKS proxy support; optional OpenAI dependency
 dingtalk-stream >= 0.24.3    # DingTalk Stream SDK
+
 # Database
 # SQLite is built into Python and does not need an extra package
 
@@ -72,3 +73,9 @@ jinja2>=3.1.0               # Jinja2 template engine for report rendering
 fastapi>=0.109.0            # Modern Python Web framework
 uvicorn[standard]>=0.27.0   # ASGI server
 python-multipart>=0.0.6     # FastAPI File/Form upload support
+
+# ===================================
+# Trading Bot dependencies (ADDED)
+# ===================================
+alpaca-py>=0.20.0             # Alpaca Markets Trading API for executing trades
+google-generativeai>=0.3.0    # Google Gemini AI API for direct stock analysis
