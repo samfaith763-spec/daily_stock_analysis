@@ -3,9 +3,9 @@ import requests
 import json
 from datetime import datetime
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
+from alpaca.trading.requests import MarketOrderRequest
 from alpaca.data.historical import StockHistoricalDataClient
-from google import genai
+import google.generativeai as genai
 from typing import Optional, Dict
 
 class AutomatedTradingBot:
@@ -18,9 +18,10 @@ class AutomatedTradingBot:
         self.stock_list = os.getenv('STOCK_LIST', '').split(',')
         
         # Initialize clients
-        self.trading_client = TradingClient(self.alpaca_api_key, self.alpaca_secret)
+        self.trading_client = TradingClient(self.alpaca_api_key, self.alpaca_secret, paper=True)
         self.data_client = StockHistoricalDataClient(self.alpaca_api_key, self.alpaca_secret)
-        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+        genai.configure(api_key=self.gemini_api_key)
+        self.gemini_model = genai.GenerativeModel('gemini-pro')
         
     def send_ntfy_notification(self, title: str, message: str, priority: int = 3):
         """Send notification via ntfy"""
@@ -40,14 +41,11 @@ class AutomatedTradingBot:
             else:
                 print(f"❌ Failed to send notification: {response.status_code}")
         except Exception as e:
-            print(f" Error sending notification: {str(e)}")
+            print(f"❌ Error sending notification: {str(e)}")
     
     def get_stock_analysis(self, symbol: str) -> Dict:
         """Use Gemini API to analyze stock"""
         try:
-            # Get current price and basic data
-            account = self.trading_client.get_account()
-            
             prompt = f"""
             Analyze this stock for trading: {symbol}
             
@@ -56,15 +54,11 @@ class AutomatedTradingBot:
             2. Market sentiment
             3. Risk level
             4. Buy/Sell/Hold recommendation
-            5. Entry and exit points
             
             Provide a concise analysis with a clear recommendation.
             """
             
-            response = self.gemini_client.models.generate_content(
-                model="gemini-pro",
-                contents=prompt
-            )
+            response = self.gemini_model.generate_content(prompt)
             
             return {
                 "analysis": response.text,
@@ -74,7 +68,7 @@ class AutomatedTradingBot:
             print(f"❌ Analysis error for {symbol}: {str(e)}")
             return {"analysis": f"Analysis failed: {str(e)}", "timestamp": datetime.now()}
     
-    def execute_trade(self, symbol: str, side: str, quantity: int, order_type: str = "market"):
+    def execute_trade(self, symbol: str, side: str, quantity: int):
         """Execute a trade via Alpaca API"""
         try:
             # Check if market is open
@@ -82,27 +76,18 @@ class AutomatedTradingBot:
             if not clock.is_open:
                 self.send_ntfy_notification(
                     "⚠️ Market Closed",
-                    f"Cannot trade {symbol}. Market is closed."
+                    f"Cannot trade {symbol}. Market is closed.",
+                    priority=4
                 )
                 return False
             
             # Create order parameters
-            if order_type == "market":
-                order_data = MarketOrderRequest(
-                    symbol=symbol,
-                    qty=quantity,
-                    side=side,
-                    time_in_force="day"
-                )
-            else:
-                # For limit orders, you'd need to calculate the price
-                order_data = LimitOrderRequest(
-                    symbol=symbol,
-                    qty=quantity,
-                    side=side,
-                    time_in_force="day",
-                    limit_price=0.0  # You'd set this based on analysis
-                )
+            order_data = MarketOrderRequest(
+                symbol=symbol,
+                qty=quantity,
+                side=side,
+                time_in_force="day"
+            )
             
             # Submit order
             order = self.trading_client.submit_order(order_data)
@@ -116,14 +101,13 @@ Time: {timestamp}
 Symbol: {symbol}
 Action: {side.upper()}
 Quantity: {quantity}
-Type: {order_type.upper()}
 Order ID: {order.id}
 
 Status: ✅ Order Submitted Successfully
             """
             
             self.send_ntfy_notification(
-                f"{'✅' if side == 'buy' else ''} Trade Executed: {symbol}",
+                f"{'✅' if side == 'buy' else '💰'} Trade Executed: {symbol}",
                 message,
                 priority=4
             )
@@ -146,7 +130,7 @@ Error: {str(e)}
             )
             return False
     
-    def make_trading_decision(self, symbol: str, analysis: str) -> Optional[str]:
+    def make_trading_decision(self, symbol: str, analysis: str) -> str:
         """Use Gemini to make trading decision based on analysis"""
         try:
             prompt = f"""
@@ -158,10 +142,7 @@ Error: {str(e)}
             Respond with ONLY one word: BUY, SELL, or HOLD
             """
             
-            response = self.gemini_client.models.generate_content(
-                model="gemini-pro",
-                contents=prompt
-            )
+            response = self.gemini_model.generate_content(prompt)
             
             decision = response.text.strip().upper()
             if "BUY" in decision:
@@ -178,7 +159,7 @@ Error: {str(e)}
     def run_analysis_and_trade(self):
         """Main trading loop - analyze and execute trades"""
         self.send_ntfy_notification(
-            " Trading Bot Started",
+            "🤖 Trading Bot Started",
             f"Starting analysis for {len(self.stock_list)} stocks...",
             priority=3
         )
@@ -205,54 +186,24 @@ Error: {str(e)}
                 self.execute_trade(symbol, "buy", quantity=1)
             elif decision == "SELL":
                 # Check if we own the stock first
-                positions = self.trading_client.get_all_positions()
-                for pos in positions:
-                    if pos.symbol == symbol and float(pos.qty) > 0:
-                        self.execute_trade(symbol, "sell", quantity=int(float(pos.qty)))
-                        break
+                try:
+                    positions = self.trading_client.get_all_positions()
+                    for pos in positions:
+                        if pos.symbol == symbol and float(pos.qty) > 0:
+                            self.execute_trade(symbol, "sell", quantity=int(float(pos.qty)))
+                            break
+                except Exception as e:
+                    print(f"Error checking positions: {e}")
             else:
-                print(f"⏸️ Holding {symbol} - No action taken")
+                print(f"️ Holding {symbol} - No action taken")
         
         self.send_ntfy_notification(
             "✅ Trading Cycle Complete",
             f"Finished analyzing {len(self.stock_list)} stocks",
             priority=3
         )
-    
-    def get_portfolio_status(self):
-        """Get current portfolio status"""
-        try:
-            account = self.trading_client.get_account()
-            positions = self.trading_client.get_all_positions()
-            
-            message = f"""
-💼 PORTFOLIO STATUS
-
-Cash: ${float(account.cash):,.2f}
-Portfolio Value: ${float(account.portfolio_value):,.2f}
-Equity: ${float(account.equity):,.2f}
-
-Positions:
-"""
-            for pos in positions:
-                if float(pos.qty) > 0:
-                    message += f"\n{pos.symbol}: {pos.qty} shares @ ${float(pos.avg_entry_price):.2f}"
-            
-            self.send_ntfy_notification(
-                "📊 Portfolio Update",
-                message,
-                priority=2
-            )
-            
-        except Exception as e:
-            print(f"❌ Error getting portfolio: {str(e)}")
 
 # Main execution
 if __name__ == "__main__":
     bot = AutomatedTradingBot()
-    
-    # Run the trading cycle
     bot.run_analysis_and_trade()
-    
-    # Optional: Get portfolio status
-    # bot.get_portfolio_status()
