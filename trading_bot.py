@@ -5,23 +5,32 @@ from datetime import datetime
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.data.historical import StockHistoricalDataClient
-import google.generativeai as genai
+from google import genai
 from typing import Optional, Dict
 
 class AutomatedTradingBot:
     def __init__(self):
-        # Initialize Alpaca Trading Client
+        # Get environment variables
         self.alpaca_api_key = os.getenv('ALPACA_API_KEY')
         self.alpaca_secret = os.getenv('ALPACA_SECRET')
         self.ntfy_url = os.getenv('NTFY_URL')
         self.gemini_api_key = os.getenv('GEMINI_API_KEY')
         self.stock_list = os.getenv('STOCK_LIST', '').split(',')
         
+        # Validate credentials
+        if not self.alpaca_api_key or not self.alpaca_secret:
+            raise ValueError("Alpaca API credentials not found! Check your GitHub secrets.")
+        
+        if not self.gemini_api_key:
+            raise ValueError("Gemini API key not found! Check your GitHub secrets.")
+        
+        if not self.ntfy_url:
+            raise ValueError("NTFY_URL not found! Check your GitHub secrets.")
+        
         # Initialize clients
         self.trading_client = TradingClient(self.alpaca_api_key, self.alpaca_secret, paper=True)
         self.data_client = StockHistoricalDataClient(self.alpaca_api_key, self.alpaca_secret)
-        genai.configure(api_key=self.gemini_api_key)
-        self.gemini_model = genai.GenerativeModel('gemini-pro')
+        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
         
     def send_ntfy_notification(self, title: str, message: str, priority: int = 3):
         """Send notification via ntfy"""
@@ -41,7 +50,7 @@ class AutomatedTradingBot:
             else:
                 print(f"❌ Failed to send notification: {response.status_code}")
         except Exception as e:
-            print(f"❌ Error sending notification: {str(e)}")
+            print(f" Error sending notification: {str(e)}")
     
     def get_stock_analysis(self, symbol: str) -> Dict:
         """Use Gemini API to analyze stock"""
@@ -58,7 +67,10 @@ class AutomatedTradingBot:
             Provide a concise analysis with a clear recommendation.
             """
             
-            response = self.gemini_model.generate_content(prompt)
+            response = self.gemini_client.models.generate_content(
+                model="gemini-2.0-flash-exp",
+                contents=prompt
+            )
             
             return {
                 "analysis": response.text,
@@ -142,7 +154,10 @@ Error: {str(e)}
             Respond with ONLY one word: BUY, SELL, or HOLD
             """
             
-            response = self.gemini_model.generate_content(prompt)
+            response = self.gemini_client.models.generate_content(
+                model="gemini-2.0-flash-exp",
+                contents=prompt
+            )
             
             decision = response.text.strip().upper()
             if "BUY" in decision:
@@ -205,5 +220,10 @@ Error: {str(e)}
 
 # Main execution
 if __name__ == "__main__":
-    bot = AutomatedTradingBot()
-    bot.run_analysis_and_trade()
+    try:
+        bot = AutomatedTradingBot()
+        bot.run_analysis_and_trade()
+    except ValueError as e:
+        print(f"❌ CRITICAL ERROR: {str(e)}")
+        print("Please check your GitHub repository secrets!")
+        exit(1)
